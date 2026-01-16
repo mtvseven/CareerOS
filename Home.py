@@ -92,6 +92,31 @@ with tab1:
     if 'acc_impact' not in st.session_state:
         st.session_state['acc_impact'] = ""
     
+    # Voice Input Section (Must be outside form to trigger reruns)
+    audio_file = st.audio_input("Voice Input Option", width="stretch")
+
+    if audio_file:
+        with st.spinner("Gemini is analyzing your recording..."):
+            audio_bytes = audio_file.read()
+            # Process audio to JSON
+            parsed_data = llm_helper.process_audio_to_form(audio_bytes, audio_file.type)
+            
+            if parsed_data:
+                # Update session state with parsed values
+                try:
+                    st.session_state['acc_date'] = datetime.datetime.strptime(parsed_data.get('date', ''), '%Y-%m-%d').date()
+                except:
+                    st.session_state['acc_date'] = datetime.date.today()
+        
+                st.session_state['acc_category'] = parsed_data.get('category', '')
+                st.session_state['acc_company'] = parsed_data.get('company', '')
+                st.session_state['acc_title'] = parsed_data.get('title', '')
+                st.session_state['acc_description'] = parsed_data.get('description', '')
+                st.session_state['acc_impact'] = parsed_data.get('impact_metric', '')
+                st.toast("Transcribed and parsed! Review the form below.")
+            else:
+                st.warning("Could not parse audio. Please try again or type manually.")
+
     # Manual Entry Form
     with st.form("accomplishment_form", clear_on_submit=False):
         
@@ -101,30 +126,6 @@ with tab1:
         title = st.text_input("Title", value=st.session_state['acc_title'], placeholder="Your role at the time...")
         description = st.text_area("Description", value=st.session_state['acc_description'], placeholder="Describe what you did and how it helped...")
         impact_metric = st.text_input("Impact Metric", value=st.session_state['acc_impact'], placeholder="e.g., Increased revenue by 20%")
-        
-        audio_file = st.audio_input("Voice Input Option", width="stretch")
-    
-        if audio_file:
-            with st.spinner("Gemini is analyzing your recording..."):
-                audio_bytes = audio_file.read()
-                # Process audio to JSON
-                parsed_data = llm_helper.process_audio_to_form(audio_bytes, audio_file.type)
-                
-                if parsed_data:
-                    # Update session state with parsed values
-                    try:
-                        st.session_state['acc_date'] = datetime.datetime.strptime(parsed_data.get('date', ''), '%Y-%m-%d').date()
-                    except:
-                        st.session_state['acc_date'] = datetime.date.today()
-            
-                    st.session_state['acc_category'] = parsed_data.get('category', '')
-                    st.session_state['acc_company'] = parsed_data.get('company', '')
-                    st.session_state['acc_title'] = parsed_data.get('title', '')
-                    st.session_state['acc_description'] = parsed_data.get('description', '')
-                    st.session_state['acc_impact'] = parsed_data.get('impact_metric', '')
-                    st.success("Transcribed and parsed! Review the form below.")
-                else:
-                    st.warning("Could not parse audio. Please try again or type manually.")
         
         submit_button = st.form_submit_button("Save Accomplishment")
 
