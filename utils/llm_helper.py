@@ -54,7 +54,8 @@ def get_available_models() -> List[str]:
 def generate_content(
     prompt: str,
     context_data: Optional[str] = None,
-    model_name: str = DEFAULT_MODEL
+    model_name: str = DEFAULT_MODEL,
+    attachments: Optional[List[dict]] = None
 ) -> str:
     """
     Generate content using Gemini.
@@ -70,7 +71,23 @@ def generate_content(
         else:
             full_prompt = prompt
             
-        response = model.generate_content(full_prompt)
+        content = [full_prompt]
+        if attachments:
+            content.extend(attachments)
+            
+        response = model.generate_content(content)
+        
+        # Robust error handling
+        if not response.candidates:
+            return "Error: No candidates returned from Gemini."
+            
+        candidate = response.candidates[0]
+        if candidate.finish_reason != 1: # 1 = STOP
+            return f"Error: Model stopped unexpectedly. Reason: {candidate.finish_reason}. Safety Ratings: {candidate.safety_ratings}"
+            
+        if not candidate.content.parts:
+            return "Error: Model returned no content parts. The input might have been blocked or interpreted as empty."
+            
         return response.text
     except Exception as e:
         return f"Error generating content: {e}"
@@ -125,6 +142,60 @@ def process_audio_to_form(
         
     except Exception as e:
         st.error(f"Error processing audio: {e}")
+        return None
+
+
+def generate_structured_content(
+    prompt: str,
+    context_data: Optional[str] = None,
+    model_name: str = DEFAULT_MODEL
+) -> Optional[dict]:
+    """
+    Generate structured JSON content using Gemini.
+    """
+    if not init_gemini():
+        return None
+    
+    try:
+        model = genai.GenerativeModel(model_name)
+        
+        # Enforce JSON instruction
+        structure_instruction = "\n\nCRITICAL: Return your response ONLY as valid JSON. Do not include markdown formatting like ```json ... ```. Just the raw JSON string."
+        
+        if context_data:
+            full_prompt = f"Context Data:\n{context_data}\n\nTask:\n{prompt}{structure_instruction}"
+        else:
+            full_prompt = f"{prompt}{structure_instruction}"
+            
+        response = model.generate_content(full_prompt)
+        
+        # Robust error handling
+        if not response.candidates:
+            st.error("Error: No candidates returned from Gemini.")
+            return None
+            
+        candidate = response.candidates[0]
+        if candidate.finish_reason != 1: # 1 = STOP
+            st.error(f"Error: Model stopped unexpectedly. Reason: {candidate.finish_reason}.")
+            return None
+            
+        text_content = response.text
+        
+        # Clean up potential markdown code blocks if the model ignores the "raw JSON" instruction
+        text_content = re.sub(r'^```json\s*', '', text_content)
+        text_content = re.sub(r'^```\s*', '', text_content)
+        text_content = re.sub(r'\s*```$', '', text_content)
+        
+        try:
+            return json.loads(text_content)
+        except json.JSONDecodeError as e:
+            st.error(f"Error decoding JSON from model output: {e}")
+            st.text("Raw output:")
+            st.code(text_content)
+            return None
+            
+    except Exception as e:
+        st.error(f"Error generating structured content: {e}")
         return None
 
 
