@@ -3,3 +3,5 @@ google-generativeai
 pandas
 gspread
 google-auth>=2.0.0
+markdown
+xhtml2pdf

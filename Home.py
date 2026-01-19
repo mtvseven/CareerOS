@@ -3,6 +3,7 @@ import pandas as pd
 import datetime
 from utils import db_manager
 import utils.llm_helper as llm_helper
+import utils.pdf_utils as pdf_utils
 
 # Verify the function exists (Streamlit hot-reload debug)
 if not hasattr(llm_helper, 'process_audio_to_form'):
@@ -243,8 +244,23 @@ with tab3:
     # col1, col2 = st.columns([1, 2])
 
     # with col1:
-    st.subheader("Details")
+    st.subheader("Job Details")
     
+
+
+    # Personal Details
+    st.markdown("### Contact Information")
+    pd_col1, pd_col2 = st.columns(2)
+    with pd_col1:
+        user_name = st.text_input("Full Name", placeholder="Jane Doe", key="user_name_input")
+        user_email = st.text_input("Email", placeholder="jane@example.com", key="user_email_input")
+    with pd_col2:
+        user_phone = st.text_input("Phone", placeholder="(555) 123-4567", key="user_phone_input")
+        user_linkedin = st.text_input("LinkedIn URL", placeholder="linkedin.com/in/...", key="user_linkedin_input")
+    
+    # Company Name Input (New)
+    company_name = st.text_input("Company Name (Optional)", help="If provided, this will ensure the cover letter is addressed correctly.")
+
     # Job Description Input
     job_description = ""
     uploaded_file = st.file_uploader(
@@ -258,25 +274,11 @@ with tab3:
             st.info("Job description loaded from file.")
         except Exception as e:
             st.error(f"Error reading file: {e}")
-    
-    # Text area for pasting or editing
-    pasted_text = st.text_area(
-        "Or Paste Job Description", 
-        height=50, 
-        placeholder="Paste the job requirements here...",
-        value=job_description if job_description else "",
-        key="jd_pasted"
-    )
-    if pasted_text:
-        job_description = pasted_text
-        
-    target_audience = st.text_input(
-        "Target Audience",
-        placeholder="Recruiters, Hiring Manager...",
-        value=DEFAULT_TARGET_AUDIENCE,
-        key="target_aud"
-    )
-    
+            
+    # Text Area Fallback
+    if not job_description:
+        job_description = st.text_area("Or paste Job Description here", height=200)
+
     st.markdown("---")
     available_models = llm_helper.get_available_models()
     default_index = 0
@@ -287,13 +289,15 @@ with tab3:
             default_index = 0
     model_name = st.selectbox("Select Model:", available_models, index=default_index if available_models else None, key="model_sel")
     
-    if st.button("Generate Assets", type="primary", key="gen_assets"):
+    # ----------------------------
+    # GENERATION LOGIC
+    # ----------------------------
+    if st.button("Generate Assets", type="primary"):
         if not job_description:
-            st.warning("Please provide a Job Description to tailor your resume and cover letter.")
+            st.warning("Please provide a Job Description.")
         else:
-            with st.spinner("Analyzing your career history and tailoring resume and cover letter..."):
+            with st.spinner("Analyzing profile and generating content..."):
                 try:
-                    # Get all accomplishments
                     current_user = st.session_state.get("username", "default")
                     df = db_manager.get_accomplishments(user=current_user)
                     if df.empty:
@@ -304,50 +308,244 @@ with tab3:
                         subset_df = df[[c for c in context_cols if c in df.columns]]
                         context_data = subset_df.to_string(index=False)
                         
+                        # Append Contact Info
+                        contact_info = f"""
+                        Name: {user_name}
+                        Email: {user_email}
+                        Phone: {user_phone}
+                        LinkedIn: {user_linkedin}
+                        """
+                        
+                        target_audience = company_name if company_name else "Hiring Manager"
+                        
+                        # Construct Prompt
+                        # We inject company name explicitly if provided
+                        company_context = f"COMPANY NAME: {company_name}" if company_name else "COMPANY NAME: Infer from Job Description"
+
                         prompt = f"""You are an expert Career Coach and Professional Resume Writer.
 
-TASK: Create both a tailored resume and a tailored cover letter that align the provided career accomplishments with the requirements and responsibilities found in the Job Description below.
+TASK: Create a tailored resume AND cover letter that ALIGN the provided career accomplishments with the requirements and responsibilities found in the Job Description below.
+
+{company_context}
 
 JOB DESCRIPTION:
 {job_description}
 
 TARGET AUDIENCE: {target_audience}
 
-INSTRUCTIONS FOR RESUME:
-1. Select and emphasize the most relevant accomplishments from the context.
-2. Use industry keywords from the job description.
-3. Focus on quantifiable impact metrics where available.
-4. Maintain a professional, high-impact tone.
-5. Structure the resume clearly with headers (e.g., Professional Summary, Experience, Skills).
+APPLICANT CONTACT INFO:
+{contact_info}
 
-INSTRUCTIONS FOR COVER LETTER:
-1. Write a compelling cover letter that demonstrates how your experience matches the job requirements.
-2. Reference specific accomplishments from your career history that align with the job description.
-3. Show enthusiasm for the role and company.
-4. Keep it concise (3-4 paragraphs) and professional.
-5. Include a clear call to action.
+INSTRUCTIONS:
+1. Infer the Company Name and Job Title from the Job Description.
+2. Estimate a "Fit Score" (Low/Medium/High) based on how well the experience aligns with the job.
+3. Write a concise cover letter (3-4 paragraphs, max 300 words) referencing specific accomplishments.
+4. Select and emphasize relevant accomplishments for the resume.
+5. Quantify impact metrics where available.
+6. Return the result strictly as a JSON object with the specified structure.
+7. If Education is mentioned in accomplishments or context, populate the Education section; otherwise, leave it empty.
 
-OUTPUT FORMAT:
-Please structure your response with two clear sections:
-1. "## Tailored Resume" - followed by the resume content
-2. "## Tailored Cover Letter" - followed by the cover letter content"""
+OUTPUT FORMAT (JSON):
+{{
+    "Fit Score": "Low/Medium/High",
+    "Company": "Name of the company inferred from the job description",
+    "Job Title": "Name of the job title inferred from the job description",
+    "Cover Letter": "The main body of the generated cover letter...",
+    "Resume": {{
+        "Professional Summary": "A strong, tailored summary...",
+        "Experience": {{
+             "Job Title, Company": {{
+                   "Start Date": "YYYY-MM-DD",
+                   "End Date": "YYYY-MM-DD or Present",
+                   "Summary": "One sentence summary...",
+                   "Accomplishments": [
+                        "Accomplishment 1...",
+                        "Accomplishment 2...",
+                        "Accomplishment 3..."
+                   ]
+             }}
+             // Add more positions as relevant, in Reverse Chronological Order
+        }},
+        "Education": {{
+             "Degree Name": {{
+                 "Type of Degree": "BSc/MSc/PhD etc.",
+                 "Major": "Major field of study",
+                 "School": "University/School Name",
+                 "Graduation Date": "YYYY-MM-DD or Year",
+                 "Information of Note": "Honors, Thesis, etc."
+             }}
+             // Add more degrees if relevant
+        }}
+    }}
+}}
+"""
                         
-                        response = llm_helper.generate_content(prompt, context_data=context_data, model_name=model_name)
-                        st.session_state['generated_profile'] = response
-                
+                        # Call new structured generation function
+                        response_dict = llm_helper.generate_structured_content(prompt, context_data=context_data, model_name=model_name)
+                        
+                        if response_dict:
+                            st.session_state['generated_profile'] = response_dict
+                            # Initialize edits state for this new profile
+                            # We'll use a specific key structure in session_state, but we can also store a clean 'edit_model'
+                            # For simplicity, we'll let the widgets initialize their own state based on the dict, 
+                            # but we need to reset the PDF generation state.
+                            st.session_state['generated_pdf_cl'] = None
+                            st.session_state['generated_pdf_resume'] = None
+                            st.session_state['profile_version'] = st.session_state.get('profile_version', 0) + 1
+                            
+                            st.success("Draft generated! Please review and edit below.")
+                        else:
+                            st.error("Failed to generate structured resume. Please try again.")
+
                 except Exception as e:
                     st.error(f"Error: {e}")
 
     # with col2:
-    st.subheader("Result")
+    st.subheader("Review & Finalize")
+    
     if 'generated_profile' in st.session_state:
-        st.markdown(st.session_state['generated_profile'])
+        content = st.session_state['generated_profile']
+        version = st.session_state.get('profile_version', 0)
         
-        st.download_button(
-            label="Download as Markdown",
-            data=st.session_state['generated_profile'],
-            file_name="tailored_resume_and_cover_letter.md",
-            mime="text/markdown"
-        )
+        if isinstance(content, dict):
+            
+            # --- Fit Score Display ---
+            fit_score = content.get("Fit Score", "N/A")
+            score_color = "green" if fit_score == "High" else "orange" if fit_score == "Medium" else "red"
+            st.markdown(f"""
+            <div style="padding: 10px; border-radius: 5px; background-color: #f0f2f6; margin-bottom: 20px; text-align: center;">
+                <h3 style="margin: 0; color: {score_color};">Fit Score: {fit_score}</h3>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            review_tab, finalize_tab = st.tabs(["✏️ Review & Edit", "💾 Generate & Download"])
+            
+            # --- Tab 1: Review & Edit ---
+            with review_tab:
+                st.markdown("### Cover Letter")
+                # Editable Cover Letter
+                cl_key = f"cl_edit_{version}"
+                new_cl_text = st.text_area(
+                    "Edit Cover Letter Content", 
+                    value=content.get('Cover Letter', ''),
+                    height=300,
+                    key=cl_key
+                )
+                
+                st.divider()
+                st.markdown("### Experience")
+                
+                # We need to capture the state of inclusions. 
+                # We will use a dictionary to track the 'final' state locally for the Generate button to read.
+                # However, since Streamlit re-runs, we rely on session_state values for the widgets.
+                
+                experience = content.get('Resume', {}).get('Experience', {})
+                
+                # Containers for layout
+                for i, (job_title_key, job_details) in enumerate(experience.items()):
+                    with st.expander(f"Job: {job_title_key}", expanded=True):
+                        
+                        # Checkbox to include the whole job
+                        job_inc_key = f"job_{i}_include_{version}"
+                        include_job = st.checkbox(
+                            f"Include '{job_title_key}' in Resume", 
+                            value=True, 
+                            key=job_inc_key
+                        )
+                        
+                        if include_job:
+                            # Edited Summary
+                            sum_key = f"job_{i}_summary_{version}"
+                            st.text_input("Job Summary", value=job_details.get('Summary', ''), key=sum_key)
+                            
+                            st.caption("Select Accomplishments to Include:")
+                            acc_list = job_details.get('Accomplishments', [])
+                            for j, acc in enumerate(acc_list):
+                                acc_key = f"job_{i}_acc_{j}_include_{version}"
+                                st.checkbox(acc, value=True, key=acc_key)
+
+            # --- Tab 2: Generate & Download ---
+            with finalize_tab:
+                st.write("Once you are happy with your edits and selections, click the button below to generate your PDFs.")
+                
+                if st.button("✨ Apply Changes & Generate PDFs", type="primary"):
+                    with st.spinner("Generating Custom PDFs..."):
+                        # Reconstruct the data dictionary based on widget states
+                        final_data = content.copy()
+                        
+                        # Update Cover Letter
+                        final_data['Cover Letter'] = st.session_state.get(cl_key, "")
+                        
+                        # Rebuild Experience
+                        final_resume = final_data.get('Resume', {}).copy()
+                        original_experience = final_resume.get('Experience', {})
+                        new_experience = {}
+                        
+                        for i, (job_title_key, job_details) in enumerate(original_experience.items()):
+                            # Check if job is included
+                            if st.session_state.get(f"job_{i}_include_{version}", True):
+                                new_job_details = job_details.copy()
+                                
+                                # Update Summary
+                                new_job_details['Summary'] = st.session_state.get(f"job_{i}_summary_{version}", job_details.get('Summary', ''))
+                                
+                                # Filter Accomplishments
+                                original_accs = job_details.get('Accomplishments', [])
+                                new_accs = []
+                                for j, acc in enumerate(original_accs):
+                                    if st.session_state.get(f"job_{i}_acc_{j}_include_{version}", True):
+                                        new_accs.append(acc)
+                                new_job_details['Accomplishments'] = new_accs
+                                
+                                new_experience[job_title_key] = new_job_details
+                        
+                        final_resume['Experience'] = new_experience
+                        final_data['Resume'] = final_resume
+        
+                        # Prepare Contact Info
+                        contact_data = {
+                            'name': user_name,
+                            'email': user_email,
+                            'phone': user_phone,
+                            'linkedin': user_linkedin
+                        }
+
+                        # Generate PDFs
+                        st.session_state['generated_pdf_cl'] = pdf_utils.create_cover_letter_pdf(final_data, contact_data)
+                        st.session_state['generated_pdf_resume'] = pdf_utils.create_resume_pdf(final_data, contact_data)
+                        st.success("PDFs Generated!")
+
+                # Download Buttons
+                col_d1, col_d2 = st.columns(2)
+                with col_d1:
+                    if st.session_state.get('generated_pdf_cl'):
+                        st.download_button(
+                            label="📥 Download Cover Letter",
+                            data=st.session_state['generated_pdf_cl'],
+                            file_name="Tailored_Cover_Letter.pdf",
+                            mime="application/pdf"
+                        )
+                    else:
+                        st.info("Click 'Generate PDFs' to create the file.")
+                        
+                with col_d2:
+                    if st.session_state.get('generated_pdf_resume'):
+                        st.download_button(
+                            label="📥 Download Resume",
+                            data=st.session_state['generated_pdf_resume'],
+                            file_name="Tailored_Resume.pdf",
+                            mime="application/pdf"
+                        )
+                    else:
+                        st.info("Click 'Generate PDFs' to create the file.")
+                
+                st.divider()
+                with st.expander("Debugger - View Structured Data"):
+                     st.json(content)
+
+        else:
+            # Fallback for legacy state
+            st.warning("Content format not recognized. Please regenerate.")
+            st.write(content)
     else:
         st.info("Upload a JD and click Generate to see results.")
