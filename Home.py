@@ -431,6 +431,18 @@ OUTPUT FORMAT (JSON):
                     height=300,
                     key=cl_key
                 )
+
+                st.divider()
+                st.markdown("### Professional Summary")
+                # Editable Professional Summary
+                prof_sum_key = f"prof_sum_edit_{version}"
+                new_prof_sum = st.text_area(
+                    "Edit Professional Summary", 
+                    value=content.get('Resume', {}).get('Professional Summary', ''),
+                    height=150,
+                    max_chars=500,
+                    key=prof_sum_key
+                )
                 
                 st.divider()
                 st.markdown("### Experience")
@@ -453,16 +465,35 @@ OUTPUT FORMAT (JSON):
                             key=job_inc_key
                         )
                         
+
                         if include_job:
                             # Edited Summary
                             sum_key = f"job_{i}_summary_{version}"
-                            st.text_input("Job Summary", value=job_details.get('Summary', ''), key=sum_key)
+                            st.text_input(
+                                "Job Summary", 
+                                value=job_details.get('Summary', ''), 
+                                max_chars=150,
+                                key=sum_key
+                            )
                             
-                            st.caption("Select Accomplishments to Include:")
+                            st.caption("Select & Edit Accomplishments:")
                             acc_list = job_details.get('Accomplishments', [])
                             for j, acc in enumerate(acc_list):
-                                acc_key = f"job_{i}_acc_{j}_include_{version}"
-                                st.checkbox(acc, value=True, key=acc_key)
+                                acc_inc_key = f"job_{i}_acc_{j}_include_{version}"
+                                acc_text_key = f"job_{i}_acc_{j}_text_{version}"
+                                
+                                ac_col1, ac_col2 = st.columns([0.05, 0.95])
+                                with ac_col1:
+                                    st.checkbox("", value=True, key=acc_inc_key)
+                                with ac_col2:
+                                    st.text_area(
+                                        "Accomplishment", 
+                                        value=acc, 
+                                        height=68, 
+                                        max_chars=150, 
+                                        key=acc_text_key, 
+                                        label_visibility="collapsed"
+                                    )
 
             # --- Tab 2: Generate & Download ---
             with finalize_tab:
@@ -478,6 +509,10 @@ OUTPUT FORMAT (JSON):
                         
                         # Rebuild Experience
                         final_resume = final_data.get('Resume', {}).copy()
+                        
+                        # Update Professional Summary
+                        final_resume['Professional Summary'] = st.session_state.get(prof_sum_key, "")
+
                         original_experience = final_resume.get('Experience', {})
                         new_experience = {}
                         
@@ -493,8 +528,12 @@ OUTPUT FORMAT (JSON):
                                 original_accs = job_details.get('Accomplishments', [])
                                 new_accs = []
                                 for j, acc in enumerate(original_accs):
+                                    # Check inclusion
                                     if st.session_state.get(f"job_{i}_acc_{j}_include_{version}", True):
-                                        new_accs.append(acc)
+                                        # Get edited text
+                                        edited_acc_text = st.session_state.get(f"job_{i}_acc_{j}_text_{version}", acc)
+                                        if edited_acc_text.strip(): # Only add if not empty
+                                            new_accs.append(edited_acc_text)
                                 new_job_details['Accomplishments'] = new_accs
                                 
                                 new_experience[job_title_key] = new_job_details
@@ -515,6 +554,18 @@ OUTPUT FORMAT (JSON):
                         st.session_state['generated_pdf_resume'] = pdf_utils.create_resume_pdf(final_data, contact_data)
                         st.success("PDFs Generated!")
 
+                        
+                        # Sanitize filenames
+                        import re
+                        def sanitize(s):
+                            if not s: return "unknown"
+                            return re.sub(r'[^a-zA-Z0-9_]', '', s.replace(' ', '_').lower())
+
+                        s_user = sanitize(user_name or "applicant")
+                        s_company = sanitize(company_name or "company")
+                        
+                        base_filename = f"{s_user}_{s_company}"
+                        
                 # Download Buttons
                 col_d1, col_d2 = st.columns(2)
                 with col_d1:
@@ -522,7 +573,7 @@ OUTPUT FORMAT (JSON):
                         st.download_button(
                             label="📥 Download Cover Letter",
                             data=st.session_state['generated_pdf_cl'],
-                            file_name="Tailored_Cover_Letter.pdf",
+                            file_name=f"{base_filename}_cover_letter.pdf",
                             mime="application/pdf"
                         )
                     else:
@@ -533,7 +584,7 @@ OUTPUT FORMAT (JSON):
                         st.download_button(
                             label="📥 Download Resume",
                             data=st.session_state['generated_pdf_resume'],
-                            file_name="Tailored_Resume.pdf",
+                            file_name=f"{base_filename}_resume.pdf",
                             mime="application/pdf"
                         )
                     else:

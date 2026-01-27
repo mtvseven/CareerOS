@@ -219,10 +219,17 @@ def create_resume_pdf(data, contact_info):
             
         experience_html += f"""
         <div class="job-entry">
-            <h2>{title_company}</h2>
-            <div class="job-meta">
-                {start} - {end}
-            </div>
+            <!-- Table layout for Title + Date alignment -->
+            <table style="width: 100%; border: none; margin-bottom: 2px;">
+                <tr>
+                    <td style="text-align: left; padding: 0;">
+                        <h2>{title_company}</h2>
+                    </td>
+                    <td style="text-align: right; vertical-align: bottom; padding: 0; width: 150px;">
+                        <span class="job-meta">{start} - {end}</span>
+                    </td>
+                </tr>
+            </table>
             <p>{job_summary}</p>
             <ul>
                 {acc_bullets}
@@ -230,9 +237,49 @@ def create_resume_pdf(data, contact_info):
         </div>
         """
         
+
+    # Build Education HTML first (Requested Order: Education -> Experience)
+    education = resume_data.get('Education', {})
+    education_html = ""
+    if education:
+        for degree_key, edu_details in education.items():
+            degree_type = edu_details.get('Type of Degree', '')
+            major = edu_details.get('Major', '')
+            school = edu_details.get('School', '')
+            grad_date = edu_details.get('Graduation Date', '')
+            info = edu_details.get('Information of Note', '')
+            
+            # Formatting line: "BSc in Computer Science" or just "Computer Science"
+            degree_line = f"{degree_type} in {major}" if degree_type and major else (degree_type or major or degree_key)
+            
+            # Single line format: **School** | Degree | Date | Note
+            # We use spans with separators
+            parts = [f"<strong>{school}</strong>"]
+            if degree_line: parts.append(degree_line)
+            if grad_date: parts.append(grad_date)
+            if info: parts.append(f"<em>{info}</em>")
+            
+            single_line_entry = " | ".join(parts)
+            
+            education_html += f"""
+            <div class="edu-entry" style="margin-bottom: 5px;">
+                {single_line_entry}
+            </div>
+            """
+
     content = f"""
     {header}
-    
+    """
+
+    if education_html:
+        content += f"""
+        <h1>Education</h1>
+        <div class="section-content">
+            {education_html}
+        </div>
+        """
+
+    content += f"""
     <h1>Professional Summary</h1>
     <div class="section-content">
         {summary}
@@ -245,34 +292,6 @@ def create_resume_pdf(data, contact_info):
     """
     
     # Build Education HTML
-    education = resume_data.get('Education', {})
-    if education:
-        education_html = ""
-        for degree_key, edu_details in education.items():
-            degree_type = edu_details.get('Type of Degree', '')
-            major = edu_details.get('Major', '')
-            school = edu_details.get('School', '')
-            grad_date = edu_details.get('Graduation Date', '')
-            info = edu_details.get('Information of Note', '')
-            
-            # Formatting line: "BSc in Computer Science" or just "Computer Science"
-            degree_line = f"{degree_type} in {major}" if degree_type and major else (degree_type or major or degree_key)
-            
-            info_html = f"<p><em>{info}</em></p>" if info else ""
-            
-            education_html += f"""
-            <div class="edu-entry" style="margin-bottom: 10px;">
-                <div style="font-weight: bold; font-size: 12pt;">{school}</div>
-                <div>{degree_line} &mdash; {grad_date}</div>
-                {info_html}
-            </div>
-            """
-            
-        content += f"""
-        <h1>Education</h1>
-        <div class="section-content">
-            {education_html}
-        </div>
-        """
+
     
     return _generate_pdf_from_html(content)
