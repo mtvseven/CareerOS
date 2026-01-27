@@ -171,14 +171,17 @@ with tab2:
             # --- Editing Interface ---
             st.caption("Double-click any cell to edit. Changes are saved when you click the button below.")
             
+            # Reset index to ensure compatible behavior with hide_index=True and num_rows="dynamic"
+            df_acc = df_acc.reset_index(drop=True)
+
             # Use data_editor to allow inline editing
             edited_df = st.data_editor(
                 df_acc, 
-                use_container_width=True, 
+                width="stretch", # Replaced use_container_width=True
                 hide_index=True,
                 disabled=["id"],  # Prevent editing IDs
                 key="history_editor",
-                num_rows="dynamic" # Allow adding/deleting rows (Deletion handles strictly via UI is complex with GSheets, sticking to explicit delete for now)
+                num_rows="dynamic" # Allow adding/deleting rows
             )
             
             # Compare original vs edited to detect changes
@@ -342,8 +345,9 @@ INSTRUCTIONS:
 3. Write a concise cover letter (3-4 paragraphs, max 300 words) referencing specific accomplishments.
 4. Select and emphasize relevant accomplishments for the resume.
 5. Quantify impact metrics where available.
-6. Return the result strictly as a JSON object with the specified structure.
-7. If Education is mentioned in accomplishments or context, populate the Education section; otherwise, leave it empty.
+6. Enforce character limits: Professional Summary (~500 chars), Job Summaries (~150 chars), Accomplishments (~150 chars).
+7. Return the result strictly as a JSON object with the specified structure.
+8. If Education is mentioned in accomplishments or context, populate the Education section; otherwise, leave it empty.
 
 OUTPUT FORMAT (JSON):
 {{
@@ -352,16 +356,16 @@ OUTPUT FORMAT (JSON):
     "Job Title": "Name of the job title inferred from the job description",
     "Cover Letter": "The main body of the generated cover letter...",
     "Resume": {{
-        "Professional Summary": "A strong, tailored summary...",
+        "Professional Summary": "A strong, tailored summary (Max 500 characters)...",
         "Experience": {{
              "Job Title, Company": {{
                    "Start Date": "YYYY-MM-DD",
                    "End Date": "YYYY-MM-DD or Present",
-                   "Summary": "One sentence summary...",
+                   "Summary": "One sentence summary (Max 150 characters)...",
                    "Accomplishments": [
-                        "Accomplishment 1...",
-                        "Accomplishment 2...",
-                        "Accomplishment 3..."
+                        "Accomplishment 1 (Max 150 characters)...",
+                        "Accomplishment 2 (Max 150 characters)...",
+                        "Accomplishment 3 (Max 150 characters)..."
                    ]
              }}
              // Add more positions as relevant, in Reverse Chronological Order
@@ -440,7 +444,6 @@ OUTPUT FORMAT (JSON):
                     "Edit Professional Summary", 
                     value=content.get('Resume', {}).get('Professional Summary', ''),
                     height=150,
-                    max_chars=500,
                     key=prof_sum_key
                 )
                 
@@ -472,7 +475,6 @@ OUTPUT FORMAT (JSON):
                             st.text_input(
                                 "Job Summary", 
                                 value=job_details.get('Summary', ''), 
-                                max_chars=150,
                                 key=sum_key
                             )
                             
@@ -490,7 +492,6 @@ OUTPUT FORMAT (JSON):
                                         "Accomplishment", 
                                         value=acc, 
                                         height=68, 
-                                        max_chars=150, 
                                         key=acc_text_key, 
                                         label_visibility="collapsed"
                                     )
@@ -564,16 +565,17 @@ OUTPUT FORMAT (JSON):
                         s_user = sanitize(user_name or "applicant")
                         s_company = sanitize(company_name or "company")
                         
-                        base_filename = f"{s_user}_{s_company}"
+                        st.session_state['base_filename'] = f"{s_user}_{s_company}"
                         
                 # Download Buttons
                 col_d1, col_d2 = st.columns(2)
                 with col_d1:
                     if st.session_state.get('generated_pdf_cl'):
+                        base_name = st.session_state.get('base_filename', 'document')
                         st.download_button(
                             label="📥 Download Cover Letter",
                             data=st.session_state['generated_pdf_cl'],
-                            file_name=f"{base_filename}_cover_letter.pdf",
+                            file_name=f"{base_name}_cover_letter.pdf",
                             mime="application/pdf"
                         )
                     else:
@@ -581,10 +583,11 @@ OUTPUT FORMAT (JSON):
                         
                 with col_d2:
                     if st.session_state.get('generated_pdf_resume'):
+                        base_name = st.session_state.get('base_filename', 'document')
                         st.download_button(
                             label="📥 Download Resume",
                             data=st.session_state['generated_pdf_resume'],
-                            file_name=f"{base_filename}_resume.pdf",
+                            file_name=f"{base_name}_resume.pdf",
                             mime="application/pdf"
                         )
                     else:

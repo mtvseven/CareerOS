@@ -271,6 +271,13 @@ def create_resume_pdf(data, contact_info):
     {header}
     """
 
+    content += f"""
+    <h1>Professional Summary</h1>
+    <div class="section-content">
+        {summary}
+    </div>
+    """
+
     if education_html:
         content += f"""
         <h1>Education</h1>
@@ -278,13 +285,8 @@ def create_resume_pdf(data, contact_info):
             {education_html}
         </div>
         """
-
-    content += f"""
-    <h1>Professional Summary</h1>
-    <div class="section-content">
-        {summary}
-    </div>
     
+    content += f"""
     <h1>Professional Experience</h1>
     <div class="section-content">
         {experience_html}
