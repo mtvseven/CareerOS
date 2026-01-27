@@ -64,9 +64,13 @@ def init_db() -> None:
             # Check if 'user' column is missing (migration)
             if "user" not in headers:
                 # Append 'user' to the header row
+                # Append 'user' to the header row
                 # Find the next empty column
                 col_idx = len(headers) + 1
-                sheet.update_cell(1, col_idx, "user")
+                # update_cell is deprecated. Use update with cell coordinates converted to A1 or update_cells
+                # Easiest: use update_cells for a single cell
+                from gspread.cell import Cell
+                sheet.update_cells([Cell(1, col_idx, "user")])
                 # st.toast("Added 'user' column to database schema.")
             
     except Exception as e:
@@ -133,7 +137,7 @@ def get_accomplishments(user: str = None) -> pd.DataFrame:
         if user:
             # Filter rows where user matches OR user is empty (legacy data visibility optional?)
             # Strict mode: Only show matching user
-            df = df[df['user'] == user]
+            df = df[df['user'] == user].copy()
             
         # Sort by date descending if possible
         if 'date' in df.columns:
